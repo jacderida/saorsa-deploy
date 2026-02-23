@@ -6,6 +6,7 @@ from rich.console import Console
 from saorsa_deploy.bootstrap import create_bootstrap_vm
 from saorsa_deploy.executor import execute_terraform_runs
 from saorsa_deploy.providers import PROVIDERS, resolve_regions
+from saorsa_deploy.state import save_deployment_state
 from saorsa_deploy.terraform import TerraformRunConfig
 
 
@@ -94,3 +95,16 @@ def cmd_infra(args):
         console.print(
             f"[bold green]All {len(results)} region(s) provisioned successfully.[/bold green]"
         )
+
+    # Save deployment state to S3 for later use by the destroy command
+    terraform_variables = {
+        "name": args.name,
+        "vm_count": str(args.vm_count),
+        "node_count": str(args.node_count),
+        "attached_volume_size": str(args.attached_volume_size),
+    }
+    try:
+        save_deployment_state(args.name, region_pairs, terraform_variables)
+        console.print("[dim]Deployment state saved to S3.[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to save deployment state: {e}[/yellow]")

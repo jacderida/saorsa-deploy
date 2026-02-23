@@ -6,7 +6,12 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from saorsa_deploy.terraform import TerraformResult, TerraformRunConfig, run_terraform
+from saorsa_deploy.terraform import (
+    TerraformResult,
+    TerraformRunConfig,
+    run_terraform,
+    run_terraform_destroy,
+)
 
 MAX_CONCURRENT = 5
 
@@ -23,6 +28,7 @@ def _build_status_table(
     statuses: dict[str, str],
     start_times: dict[str, float],
     spinner_tick: int,
+    action_label: str = "applying...",
 ) -> Table:
     """Build a rich table showing the status of each region."""
     table = Table(show_header=True, header_style="bold")
@@ -38,7 +44,7 @@ def _build_status_table(
         elapsed = _format_elapsed(now - start)
         if status == "running":
             frame = SPINNER_FRAMES[spinner_tick % len(SPINNER_FRAMES)]
-            symbol = f"[yellow]{frame} applying...[/yellow]"
+            symbol = f"[yellow]{frame} {action_label}[/yellow]"
         elif status == "done":
             symbol = "[green]done[/green]"
         elif status == "pending":
@@ -69,14 +75,27 @@ def _parse_resource_summary(stdout: str) -> dict[str, int]:
 
 def execute_terraform_runs(
     configs: list[TerraformRunConfig],
+    action: str = "apply",
 ) -> list[TerraformResult]:
     """Execute multiple Terraform runs in parallel with progress display.
+
+    Args:
+        configs: List of TerraformRunConfig for each region.
+        action: Either "apply" or "destroy". Determines which terraform
+                command to run and the status label shown during execution.
 
     Runs up to MAX_CONCURRENT Terraform operations at once.
     Displays a live-updating table with spinners and elapsed time.
     On failure, prints the full error output for failed regions.
-    Returns results and prints a summary of resources created.
+    Returns results and prints a summary of resources affected.
     """
+    if action == "destroy":
+        run_fn = run_terraform_destroy
+        action_label = "destroying..."
+    else:
+        run_fn = run_terraform
+        action_label = "applying..."
+
     console = Console()
     statuses: dict[str, str] = {}
     start_times: dict[str, float] = {}
@@ -87,7 +106,7 @@ def execute_terraform_runs(
         statuses[f"{config.provider}/{config.region}"] = "pending"
 
     with Live(
-        _build_status_table(statuses, start_times, spinner_tick),
+        _build_status_table(statuses, start_times, spinner_tick, action_label),
         console=console,
         refresh_per_second=4,
     ) as live:
@@ -97,13 +116,13 @@ def execute_terraform_runs(
                 key = f"{config.provider}/{config.region}"
                 statuses[key] = "running"
                 start_times[key] = time.monotonic()
-                future = pool.submit(run_terraform, config)
+                future = pool.submit(run_fn, config)
                 future_to_key[future] = key
 
             while future_to_key:
                 # Update display with spinner animation
                 spinner_tick += 1
-                live.update(_build_status_table(statuses, start_times, spinner_tick))
+                live.update(_build_status_table(statuses, start_times, spinner_tick, action_label))
 
                 # Check for completed futures (non-blocking)
                 done = set()
@@ -116,7 +135,9 @@ def execute_terraform_runs(
                     result = future.result()
                     results.append(result)
                     statuses[key] = "done" if result.success else "failed"
-                    live.update(_build_status_table(statuses, start_times, spinner_tick))
+                    live.update(
+                        _build_status_table(statuses, start_times, spinner_tick, action_label)
+                    )
 
                 if future_to_key:
                     time.sleep(0.25)

@@ -94,3 +94,58 @@ def run_terraform(config: TerraformRunConfig) -> TerraformResult:
         stdout=apply_result.stdout,
         stderr=apply_result.stderr,
     )
+
+
+def build_destroy_args(config: TerraformRunConfig) -> list[str]:
+    """Build the argument list for terraform destroy."""
+    args = [
+        "terraform",
+        "destroy",
+        "-auto-approve",
+        "-input=false",
+    ]
+    for key, value in sorted(config.variables.items()):
+        args.append(f"-var={key}={value}")
+    return args
+
+
+def run_terraform_destroy(config: TerraformRunConfig) -> TerraformResult:
+    """Run terraform init + destroy for a single provider/region."""
+    prepare_workspace(config)
+
+    env = os.environ.copy()
+    if "DO_TOKEN" in env:
+        env["TF_VAR_do_token"] = env["DO_TOKEN"]
+
+    init_args = build_init_args(config)
+    init_result = subprocess.run(
+        init_args,
+        cwd=str(config.workspace_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if init_result.returncode != 0:
+        return TerraformResult(
+            success=False,
+            provider=config.provider,
+            region=config.region,
+            stdout=init_result.stdout,
+            stderr=init_result.stderr,
+        )
+
+    destroy_args = build_destroy_args(config)
+    destroy_result = subprocess.run(
+        destroy_args,
+        cwd=str(config.workspace_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return TerraformResult(
+        success=destroy_result.returncode == 0,
+        provider=config.provider,
+        region=config.region,
+        stdout=destroy_result.stdout,
+        stderr=destroy_result.stderr,
+    )

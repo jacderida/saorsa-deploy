@@ -7,9 +7,11 @@ import pytest
 from saorsa_deploy.terraform import (
     TerraformRunConfig,
     build_apply_args,
+    build_destroy_args,
     build_init_args,
     prepare_workspace,
     run_terraform,
+    run_terraform_destroy,
 )
 
 
@@ -194,3 +196,101 @@ class TestRunTerraform:
         mock_run.return_value = _make_completed_process()
         run_terraform(config)
         assert (config.workspace_dir / "main.tf").exists()
+
+
+class TestBuildDestroyArgs:
+    def test_includes_variables_sorted(self, config):
+        args = build_destroy_args(config)
+        assert args == [
+            "terraform",
+            "destroy",
+            "-auto-approve",
+            "-input=false",
+            "-var=attached_volume_size=20",
+            "-var=name=TEST",
+            "-var=node_count=5",
+            "-var=region=lon1",
+            "-var=vm_count=2",
+        ]
+
+    def test_no_variables(self, config):
+        config.variables = {}
+        args = build_destroy_args(config)
+        assert args == [
+            "terraform",
+            "destroy",
+            "-auto-approve",
+            "-input=false",
+        ]
+
+
+class TestRunTerraformDestroy:
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_calls_init_then_destroy(self, mock_run, config):
+        mock_run.return_value = _make_completed_process()
+        run_terraform_destroy(config)
+
+        assert mock_run.call_count == 2
+        init_call = mock_run.call_args_list[0]
+        assert init_call.args[0][1] == "init"
+        destroy_call = mock_run.call_args_list[1]
+        assert destroy_call.args[0][1] == "destroy"
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_calls_destroy_with_correct_args(self, mock_run, config):
+        mock_run.return_value = _make_completed_process()
+        run_terraform_destroy(config)
+
+        destroy_call = mock_run.call_args_list[1]
+        assert destroy_call.args[0] == [
+            "terraform",
+            "destroy",
+            "-auto-approve",
+            "-input=false",
+            "-var=attached_volume_size=20",
+            "-var=name=TEST",
+            "-var=node_count=5",
+            "-var=region=lon1",
+            "-var=vm_count=2",
+        ]
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_successful_destroy_returns_success(self, mock_run, config):
+        mock_run.return_value = _make_completed_process()
+        result = run_terraform_destroy(config)
+        assert result.success is True
+        assert result.provider == "digitalocean"
+        assert result.region == "lon1"
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_init_failure_skips_destroy(self, mock_run, config):
+        mock_run.return_value = _make_completed_process(returncode=1, stderr="init error")
+        result = run_terraform_destroy(config)
+        assert result.success is False
+        assert mock_run.call_count == 1
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_destroy_failure_returns_failure(self, mock_run, config):
+        mock_run.side_effect = [
+            _make_completed_process(),
+            _make_completed_process(returncode=1, stderr="destroy error"),
+        ]
+        result = run_terraform_destroy(config)
+        assert result.success is False
+        assert result.stderr == "destroy error"
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_passes_do_token_as_tf_var(self, mock_run, config):
+        mock_run.return_value = _make_completed_process()
+        original = os.environ.get("DO_TOKEN")
+        try:
+            os.environ["DO_TOKEN"] = "test-token-456"
+            run_terraform_destroy(config)
+
+            init_call = mock_run.call_args_list[0]
+            assert init_call.kwargs["env"]["TF_VAR_do_token"] == "test-token-456"
+        finally:
+            if original is None:
+                os.environ.pop("DO_TOKEN", None)
+            else:
+                os.environ["DO_TOKEN"] = original

@@ -188,3 +188,34 @@ def destroy_bootstrap_vm(droplet_id, volume_id):
 
     # Delete volume
     requests.delete(f"{DO_API_URL}/volumes/{volume_id}", headers=headers)
+
+
+def find_and_destroy_bootstrap_vm(name):
+    """Find the bootstrap VM and volume by deployment name and destroy them.
+
+    Looks up the droplet and volume by their naming convention, then calls
+    destroy_bootstrap_vm(). Returns a dict with keys: found, droplet_name.
+
+    If neither the droplet nor volume is found, returns found=False and does nothing.
+    """
+    headers = _get_headers()
+    droplet_name = f"{name}-saorsa-bootstrap"
+    volume_name = f"{name}-saorsa-bootstrap-storage".lower()
+
+    droplet = _find_droplet_by_name(droplet_name, headers)
+    volume = _find_volume_by_name(volume_name, headers)
+
+    if not droplet and not volume:
+        return {"found": False, "droplet_name": droplet_name}
+
+    droplet_id = droplet["id"] if droplet else None
+    volume_id = volume["id"] if volume else None
+
+    if droplet_id and volume_id:
+        destroy_bootstrap_vm(droplet_id, volume_id)
+    elif droplet_id:
+        requests.delete(f"{DO_API_URL}/droplets/{droplet_id}", headers=headers)
+    elif volume_id:
+        requests.delete(f"{DO_API_URL}/volumes/{volume_id}", headers=headers)
+
+    return {"found": True, "droplet_name": droplet_name}

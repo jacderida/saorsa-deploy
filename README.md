@@ -20,10 +20,10 @@ uv sync
 | Variable | Description |
 |----------|-------------|
 | `DO_TOKEN` | Digital Ocean API token (required) |
-| `AWS_ACCESS_KEY_ID` | AWS credentials for Terraform state backend |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials for Terraform state backend |
+| `AWS_ACCESS_KEY_ID` | AWS credentials for Terraform state backend and deployment state |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials for Terraform state backend and deployment state |
 
-Terraform state is stored in the `maidsafe-org-infra-tfstate` S3 bucket.
+Terraform state and deployment metadata are stored in the `maidsafe-org-infra-tfstate` S3 bucket (region `eu-west-2`). AWS credentials are resolved via the standard boto3 credential chain (environment variables, `~/.aws/credentials`, or IAM roles).
 
 ## Usage
 
@@ -56,6 +56,33 @@ uv run saorsa-deploy infra --name DEV-01 --node-count 10 --vm-count 3 --testnet
 Deploy across 2 regions with larger volumes:
 ```bash
 uv run saorsa-deploy infra --name PERF-05 --node-count 10 --vm-count 5 --region-counts 2 --attached-volume-size 50
+```
+
+### `destroy` command
+
+Tear down all infrastructure for a named deployment. Reads deployment metadata from S3 (saved automatically by the `infra` command), so you only need to specify the deployment name.
+
+```bash
+uv run saorsa-deploy destroy --name DEV-01
+```
+
+#### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--force` | flag | No | - | Skip the confirmation prompt |
+| `--name` | string | Yes | - | Deployment name to destroy |
+
+#### Examples
+
+Destroy a deployment (with confirmation prompt):
+```bash
+uv run saorsa-deploy destroy --name DEV-01
+```
+
+Destroy without confirmation (for CI/CD pipelines):
+```bash
+uv run saorsa-deploy destroy --name DEV-01 --force
 ```
 
 ### How it works

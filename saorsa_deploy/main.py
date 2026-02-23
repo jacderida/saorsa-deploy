@@ -46,6 +46,19 @@ def main():
         help="Number of VMs per provider per region",
     )
 
+    destroy_parser = subparsers.add_parser("destroy", help="Destroy testnet infrastructure")
+    destroy_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+    destroy_parser.add_argument(
+        "--name",
+        type=str,
+        required=True,
+        help="Deployment name to destroy",
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -56,6 +69,10 @@ def main():
         from saorsa_deploy.cmd.infra import cmd_infra
 
         cmd_infra(args)
+    elif args.command == "destroy":
+        from saorsa_deploy.cmd.destroy import cmd_destroy
+
+        cmd_destroy(args)
 
 
 if __name__ == "__main__":

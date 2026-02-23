@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Deploy testnets for saorsa-node using Terraform and Pyinfra"
 requires-python = ">=3.10"
 dependencies = [
+    "boto3>=1.34",
     "pyinfra>=3",
     "requests>=2",
     "rich>=13",
@@ -24,5 +25,6 @@ select = ["E", "F", "I"]
 
 [dependency-groups]
 dev = [
+    "pytest>=8",
     "ruff>=0.15.2",
 ]
