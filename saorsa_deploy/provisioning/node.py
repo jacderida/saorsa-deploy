@@ -108,17 +108,21 @@ class SaorsaNodeProvisioner:
             self.console.print(f"Connecting to {len(self.host_ips)} host(s) as root...")
             connect_all(state)
 
-            add_op(
+            install_cmd = (
+                f"test -f {BINARY_INSTALL_PATH} "
+                f"&& echo 'SAORSA_BINARY:SKIP' || "
+                f"(wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME} && "
+                f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/ && "
+                f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH} && "
+                f"chmod +x {BINARY_INSTALL_PATH} && "
+                f"rm -f /tmp/{RELEASE_ASSET_NAME} && "
+                f"echo 'SAORSA_BINARY:INSTALLED')"
+            )
+            install_results = add_op(
                 state,
                 server.shell,
                 name="Download and install saorsa-node binary",
-                commands=[
-                    f"wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME}",
-                    f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/",
-                    f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH}",
-                    f"chmod +x {BINARY_INSTALL_PATH}",
-                    f"rm -f /tmp/{RELEASE_ASSET_NAME}",
-                ],
+                commands=[install_cmd],
             )
 
             unit_commands = []
@@ -148,9 +152,14 @@ class SaorsaNodeProvisioner:
 
             enable_commands = ["systemctl daemon-reload"]
             for service_name in service_names:
-                enable_commands.append(f"systemctl enable --now {service_name}")
+                enable_commands.append(
+                    f"systemctl is-active --quiet {service_name} "
+                    f"&& echo 'SAORSA_SVC:RUNNING:{service_name}' "
+                    f"|| (systemctl enable --now {service_name} "
+                    f"&& echo 'SAORSA_SVC:STARTED:{service_name}')"
+                )
 
-            add_op(
+            svc_results = add_op(
                 state,
                 server.shell,
                 name="Enable and start node services",
@@ -178,3 +187,52 @@ class SaorsaNodeProvisioner:
             for host in failed:
                 self.console.print(f"  [red]Failed: {host.name}[/red]")
             raise RuntimeError(f"{len(failed)} host(s) failed provisioning")
+
+        self._report_results(install_results, svc_results)
+
+    def _report_results(self, install_results, svc_results):
+        """Print post-execution summary with idempotency information."""
+        try:
+            hosts = list(install_results.keys())
+        except (TypeError, AttributeError):
+            return
+
+        binary_installed = 0
+        binary_skipped = 0
+        svcs_started = 0
+        svcs_running = 0
+
+        for host in hosts:
+            install_meta = install_results[host]
+            for line in install_meta.stdout_lines:
+                if "SAORSA_BINARY:SKIP" in line:
+                    binary_skipped += 1
+                elif "SAORSA_BINARY:INSTALLED" in line:
+                    binary_installed += 1
+
+            svc_meta = svc_results[host]
+            for line in svc_meta.stdout_lines:
+                if "SAORSA_SVC:RUNNING:" in line:
+                    svcs_running += 1
+                elif "SAORSA_SVC:STARTED:" in line:
+                    svcs_started += 1
+
+        total_hosts = len(hosts)
+        if binary_skipped == total_hosts:
+            self.console.print("  Binary: already installed on all hosts")
+        elif binary_installed == total_hosts:
+            self.console.print("  Binary: installed on all hosts")
+        else:
+            self.console.print(
+                f"  Binary: installed on {binary_installed}, already installed on {binary_skipped}"
+            )
+
+        total_svcs = svcs_started + svcs_running
+        if svcs_running == total_svcs and total_svcs > 0:
+            self.console.print(f"  Services: all {svcs_running} already running")
+        elif svcs_started == total_svcs and total_svcs > 0:
+            self.console.print(f"  Services: {svcs_started} started")
+        elif total_svcs > 0:
+            self.console.print(
+                f"  Services: {svcs_started} started, {svcs_running} already running"
+            )

@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pyinfra.operations import files, server, systemd
 
 from saorsa_deploy.provisioning.genesis import (
     BINARY_INSTALL_PATH,
@@ -245,3 +246,59 @@ class TestSaorsaGenesisNodeProvisioner:
         assert service_call.kwargs.get("service") == SERVICE_NAME
         assert service_call.kwargs.get("running") is True
         assert service_call.kwargs.get("enabled") is True
+
+    @patch("saorsa_deploy.provisioning.genesis.disconnect_all")
+    @patch("saorsa_deploy.provisioning.genesis.run_ops")
+    @patch("saorsa_deploy.provisioning.genesis.add_op")
+    @patch("saorsa_deploy.provisioning.genesis.connect_all")
+    @patch("saorsa_deploy.provisioning.genesis.State")
+    @patch("saorsa_deploy.provisioning.genesis.Inventory")
+    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    def test_provision_uses_idempotent_operations(
+        self,
+        mock_release_url,
+        _mock_inventory,
+        _mock_state,
+        _mock_connect,
+        mock_add_op,
+        _mock_run_ops,
+        _mock_disconnect,
+    ):
+        mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
+
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1", port=10000)
+        node.execute()
+
+        op_types = [call[0][1] for call in mock_add_op.call_args_list]
+        # server.shell (guarded), files.put, systemd.daemon_reload, systemd.service
+        assert op_types[0] is server.shell
+        assert op_types[1] is files.put
+        assert op_types[2] is systemd.daemon_reload
+        assert op_types[3] is systemd.service
+
+    @patch("saorsa_deploy.provisioning.genesis.disconnect_all")
+    @patch("saorsa_deploy.provisioning.genesis.run_ops")
+    @patch("saorsa_deploy.provisioning.genesis.add_op")
+    @patch("saorsa_deploy.provisioning.genesis.connect_all")
+    @patch("saorsa_deploy.provisioning.genesis.State")
+    @patch("saorsa_deploy.provisioning.genesis.Inventory")
+    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    def test_provision_binary_install_has_existence_guard(
+        self,
+        mock_release_url,
+        _mock_inventory,
+        _mock_state,
+        _mock_connect,
+        mock_add_op,
+        _mock_run_ops,
+        _mock_disconnect,
+    ):
+        mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
+
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1")
+        node.execute()
+
+        download_call = mock_add_op.call_args_list[0]
+        commands = download_call.kwargs.get("commands", [])
+        assert len(commands) == 1
+        assert commands[0].startswith("test -f /usr/local/bin/saorsa-node")

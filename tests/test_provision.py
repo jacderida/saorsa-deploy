@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pyinfra.operations import server
 
 from saorsa_deploy.provisioning.node import (
     SaorsaNodeProvisioner,
@@ -124,7 +125,7 @@ class TestSaorsaNodeProvisioner:
     def test_execute_calls_pyinfra_operations(
         self,
         mock_release_url,
-        _mock_inventory,
+        _,
         mock_state,
         mock_connect,
         mock_add_op,
@@ -283,3 +284,108 @@ class TestSaorsaNodeProvisioner:
         )
         with pytest.raises(RuntimeError, match="1 host\\(s\\) failed provisioning"):
             provisioner.execute()
+
+    @patch("saorsa_deploy.provisioning.node.disconnect_all")
+    @patch("saorsa_deploy.provisioning.node.run_ops")
+    @patch("saorsa_deploy.provisioning.node.add_op")
+    @patch("saorsa_deploy.provisioning.node.connect_all")
+    @patch("saorsa_deploy.provisioning.node.State")
+    @patch("saorsa_deploy.provisioning.node.Inventory")
+    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    def test_execute_all_ops_are_server_shell(
+        self,
+        mock_release_url,
+        _mock_inventory,
+        mock_state,
+        _mock_connect,
+        mock_add_op,
+        _mock_run_ops,
+        _mock_disconnect,
+    ):
+        mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
+        mock_state_instance = MagicMock()
+        mock_state_instance.failed_hosts = set()
+        mock_state.return_value = mock_state_instance
+
+        provisioner = SaorsaNodeProvisioner(
+            host_ips=["10.0.0.1"],
+            bootstrap_ip="10.0.0.100",
+            bootstrap_port=5000,
+            node_count=2,
+        )
+        provisioner.execute()
+
+        op_types = [call[0][1] for call in mock_add_op.call_args_list]
+        assert all(op is server.shell for op in op_types)
+
+    @patch("saorsa_deploy.provisioning.node.disconnect_all")
+    @patch("saorsa_deploy.provisioning.node.run_ops")
+    @patch("saorsa_deploy.provisioning.node.add_op")
+    @patch("saorsa_deploy.provisioning.node.connect_all")
+    @patch("saorsa_deploy.provisioning.node.State")
+    @patch("saorsa_deploy.provisioning.node.Inventory")
+    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    def test_execute_binary_install_has_existence_guard(
+        self,
+        mock_release_url,
+        _mock_inventory,
+        mock_state,
+        _mock_connect,
+        mock_add_op,
+        _mock_run_ops,
+        _mock_disconnect,
+    ):
+        mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
+        mock_state_instance = MagicMock()
+        mock_state_instance.failed_hosts = set()
+        mock_state.return_value = mock_state_instance
+
+        provisioner = SaorsaNodeProvisioner(
+            host_ips=["10.0.0.1"],
+            bootstrap_ip="10.0.0.100",
+            bootstrap_port=5000,
+        )
+        provisioner.execute()
+
+        download_call = mock_add_op.call_args_list[0]
+        commands = download_call.kwargs.get("commands", [])
+        assert len(commands) == 1
+        assert commands[0].startswith("test -f /usr/local/bin/saorsa-node")
+
+    @patch("saorsa_deploy.provisioning.node.disconnect_all")
+    @patch("saorsa_deploy.provisioning.node.run_ops")
+    @patch("saorsa_deploy.provisioning.node.add_op")
+    @patch("saorsa_deploy.provisioning.node.connect_all")
+    @patch("saorsa_deploy.provisioning.node.State")
+    @patch("saorsa_deploy.provisioning.node.Inventory")
+    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    def test_execute_service_enable_has_is_active_guard(
+        self,
+        mock_release_url,
+        _mock_inventory,
+        mock_state,
+        _mock_connect,
+        mock_add_op,
+        _mock_run_ops,
+        _mock_disconnect,
+    ):
+        mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
+        mock_state_instance = MagicMock()
+        mock_state_instance.failed_hosts = set()
+        mock_state.return_value = mock_state_instance
+
+        provisioner = SaorsaNodeProvisioner(
+            host_ips=["10.0.0.1"],
+            bootstrap_ip="10.0.0.100",
+            bootstrap_port=5000,
+            node_count=2,
+        )
+        provisioner.execute()
+
+        # Third add_op call is enable-and-start
+        enable_call = mock_add_op.call_args_list[2]
+        commands = enable_call.kwargs.get("commands", [])
+        # First command is daemon-reload, rest are guarded service starts
+        assert commands[0] == "systemctl daemon-reload"
+        assert "systemctl is-active --quiet saorsa-node-1" in commands[1]
+        assert "systemctl is-active --quiet saorsa-node-2" in commands[2]

@@ -114,23 +114,24 @@ class SaorsaGenesisNodeProvisioner:
         connect_all(state)
 
         try:
-            self.console.print("Downloading and installing saorsa-node binary...")
-            add_op(
+            install_cmd = (
+                f"test -f {BINARY_INSTALL_PATH} "
+                f"&& echo 'SAORSA_BINARY:SKIP' || "
+                f"(wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME} && "
+                f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/ && "
+                f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH} && "
+                f"chmod +x {BINARY_INSTALL_PATH} && "
+                f"rm -f /tmp/{RELEASE_ASSET_NAME} && "
+                f"echo 'SAORSA_BINARY:INSTALLED')"
+            )
+            install_results = add_op(
                 state,
                 server.shell,
                 name="Download and install saorsa-node binary",
-                commands=[
-                    f"wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME}",
-                    f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/",
-                    f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH}",
-                    f"chmod +x {BINARY_INSTALL_PATH}",
-                    f"rm -f /tmp/{RELEASE_ASSET_NAME}",
-                ],
+                commands=[install_cmd],
             )
 
-            self.console.print(f"Writing systemd unit file to {UNIT_FILE_PATH}...")
-            self.console.print(f"  ExecStart: {exec_start}")
-            add_op(
+            put_results = add_op(
                 state,
                 files.put,
                 name="Write systemd unit file",
@@ -140,15 +141,13 @@ class SaorsaGenesisNodeProvisioner:
                 add_deploy_dir=False,
             )
 
-            self.console.print("Reloading systemd daemon...")
             add_op(
                 state,
                 systemd.daemon_reload,
                 name="Reload systemd daemon",
             )
 
-            self.console.print(f"Enabling and starting {SERVICE_NAME} service...")
-            add_op(
+            svc_results = add_op(
                 state,
                 systemd.service,
                 name="Enable and start genesis node service",
@@ -157,6 +156,33 @@ class SaorsaGenesisNodeProvisioner:
                 enabled=True,
             )
 
+            self.console.print("Running provisioning operations...")
             run_ops(state)
+            self._report_results(install_results, put_results, svc_results)
         finally:
             disconnect_all(state)
+
+    def _report_results(self, install_results, put_results, svc_results):
+        """Print post-execution summary with idempotency information."""
+        try:
+            host = next(iter(install_results))
+        except (StopIteration, TypeError):
+            return
+
+        install_meta = install_results[host]
+        if any("SAORSA_BINARY:SKIP" in line for line in install_meta.stdout_lines):
+            self.console.print("  Binary: already installed")
+        else:
+            self.console.print("  Binary: installed")
+
+        put_meta = put_results[host]
+        if put_meta.did_change():
+            self.console.print(f"  Unit file: updated ({UNIT_FILE_PATH})")
+        else:
+            self.console.print("  Unit file: already up to date")
+
+        svc_meta = svc_results[host]
+        if svc_meta.did_change():
+            self.console.print(f"  Service: {SERVICE_NAME} started and enabled")
+        else:
+            self.console.print(f"  Service: {SERVICE_NAME} already running")
