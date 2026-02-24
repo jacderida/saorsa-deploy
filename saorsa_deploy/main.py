@@ -23,12 +23,6 @@ def main():
         help="Deployment name (used as prefix in VM names, e.g. DEV-01)",
     )
     infra_parser.add_argument(
-        "--node-count",
-        type=int,
-        required=True,
-        help="Number of nodes per VM",
-    )
-    infra_parser.add_argument(
         "--region-counts",
         type=str,
         default="3",
@@ -69,7 +63,8 @@ def main():
     provision_genesis_parser.add_argument(
         "--port",
         type=int,
-        help="Port the node will run with",
+        required=True,
+        help="Port the genesis node will run with (required for bootstrap address)",
     )
     provision_genesis_parser.add_argument(
         "--ssh-key-path",
@@ -81,6 +76,52 @@ def main():
         "--testnet",
         action="store_true",
         help="Run the node with the --testnet flag",
+    )
+
+    provision_parser = subparsers.add_parser("provision", help="Provision nodes on all VMs")
+    provision_parser.add_argument(
+        "--ip-version",
+        type=str,
+        choices=["v4", "v6"],
+        help="IP version the nodes will run with (v4 or v6)",
+    )
+    provision_parser.add_argument(
+        "--log-level",
+        type=str,
+        help="Logging level the nodes will run with",
+    )
+    provision_parser.add_argument(
+        "--name",
+        type=str,
+        required=True,
+        help="Deployment name (must match the name used with infra command)",
+    )
+    provision_parser.add_argument(
+        "--node-count",
+        type=int,
+        required=True,
+        help="Number of node services per VM",
+    )
+    provision_parser.add_argument(
+        "--port",
+        type=int,
+        help="Beginning of a port range from PORT to PORT+N (omit for random ports)",
+    )
+    provision_parser.add_argument(
+        "--region",
+        type=str,
+        help="Provision only VMs in this region (e.g., digitalocean/lon1)",
+    )
+    provision_parser.add_argument(
+        "--ssh-key-path",
+        type=str,
+        default="~/.ssh/id_rsa",
+        help="Path to SSH key for provisioning (default: ~/.ssh/id_rsa)",
+    )
+    provision_parser.add_argument(
+        "--testnet",
+        action="store_true",
+        help="Run the nodes with the --testnet flag",
     )
 
     destroy_parser = subparsers.add_parser("destroy", help="Destroy testnet infrastructure")
@@ -110,6 +151,10 @@ def main():
         from saorsa_deploy.cmd.provision_genesis import cmd_provision_genesis
 
         cmd_provision_genesis(args)
+    elif args.command == "provision":
+        from saorsa_deploy.cmd.provision import cmd_provision
+
+        cmd_provision(args)
     elif args.command == "destroy":
         from saorsa_deploy.cmd.destroy import cmd_destroy
 

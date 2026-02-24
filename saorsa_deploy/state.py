@@ -16,6 +16,7 @@ def save_deployment_state(
     regions: list[tuple[str, str]],
     terraform_variables: dict[str, str],
     bootstrap_ip: str,
+    vm_ips: dict[str, list[str]],
 ) -> None:
     """Save deployment metadata to S3 for later use by other commands."""
     state = {
@@ -23,7 +24,21 @@ def save_deployment_state(
         "regions": [[provider, region] for provider, region in regions],
         "terraform_variables": terraform_variables,
         "bootstrap_ip": bootstrap_ip,
+        "vm_ips": vm_ips,
     }
+    client = _get_s3_client()
+    client.put_object(
+        Bucket=S3_BUCKET,
+        Key=f"{S3_KEY_PREFIX}/{name}.json",
+        Body=json.dumps(state, indent=2),
+        ContentType="application/json",
+    )
+
+
+def update_deployment_state(name: str, updates: dict) -> None:
+    """Merge updates into existing deployment state in S3."""
+    state = load_deployment_state(name)
+    state.update(updates)
     client = _get_s3_client()
     client.put_object(
         Bucket=S3_BUCKET,

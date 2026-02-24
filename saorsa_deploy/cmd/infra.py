@@ -76,7 +76,6 @@ def cmd_infra(args):
                 "name": args.name,
                 "region": region,
                 "vm_count": str(args.vm_count),
-                "node_count": str(args.node_count),
                 "attached_volume_size": str(args.attached_volume_size),
             },
         )
@@ -96,14 +95,25 @@ def cmd_infra(args):
             f"[bold green]All {len(results)} region(s) provisioned successfully.[/bold green]"
         )
 
+    vm_ips = {}
+    for result in results:
+        if result.success and result.outputs.get("droplet_ips"):
+            key = f"{result.provider}/{result.region}"
+            vm_ips[key] = result.outputs["droplet_ips"]
+
     terraform_variables = {
         "name": args.name,
         "vm_count": str(args.vm_count),
-        "node_count": str(args.node_count),
         "attached_volume_size": str(args.attached_volume_size),
     }
     try:
-        save_deployment_state(args.name, region_pairs, terraform_variables, bootstrap["ip_address"])
+        save_deployment_state(
+            args.name,
+            region_pairs,
+            terraform_variables,
+            bootstrap["ip_address"],
+            vm_ips=vm_ips,
+        )
         console.print("[dim]Deployment state saved to S3.[/dim]")
     except Exception as e:
         console.print(f"[yellow]Warning: Failed to save deployment state: {e}[/yellow]")

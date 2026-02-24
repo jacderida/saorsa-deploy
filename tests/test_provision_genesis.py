@@ -5,7 +5,7 @@ import pytest
 from saorsa_deploy.provisioning.genesis import (
     BINARY_INSTALL_PATH,
     SERVICE_NAME,
-    SaorsaGenesisNode,
+    SaorsaGenesisNodeProvisioner,
     _build_exec_start,
     _build_unit_file,
     _get_latest_release_url,
@@ -15,7 +15,7 @@ from saorsa_deploy.provisioning.genesis import (
 class TestBuildExecStart:
     def test_minimal_flags(self):
         result = _build_exec_start()
-        assert result == f"{BINARY_INSTALL_PATH} --disable-payment-verification"
+        assert result == f"{BINARY_INSTALL_PATH} --ip-version ipv4 --disable-payment-verification"
 
     def test_all_flags(self):
         result = _build_exec_start(port=10000, ip_version="ipv4", log_level="debug", testnet=True)
@@ -23,18 +23,31 @@ class TestBuildExecStart:
         assert "--ip-version ipv4" in result
         assert "--log-level debug" in result
         assert "--disable-payment-verification" in result
-        assert "--testnet" in result
+        assert "--network-mode testnet" in result
 
     def test_port_only(self):
         result = _build_exec_start(port=5000)
         assert "--port 5000" in result
-        assert "--ip-version" not in result
+        assert "--ip-version ipv4" in result
         assert "--log-level" not in result
-        assert "--testnet" not in result
+        assert "--network-mode" not in result
+
+    def test_default_ip_version_is_ipv4(self):
+        result = _build_exec_start()
+        assert "--ip-version ipv4" in result
+
+    def test_ip_version_can_be_overridden(self):
+        result = _build_exec_start(ip_version="ipv6")
+        assert "--ip-version ipv6" in result
+        assert "--ip-version ipv4" not in result
 
     def test_testnet_flag(self):
         result = _build_exec_start(testnet=True)
-        assert result.endswith("--testnet")
+        assert result.endswith("--network-mode testnet")
+
+    def test_no_network_mode_when_not_testnet(self):
+        result = _build_exec_start(testnet=False)
+        assert "--network-mode" not in result
 
     def test_disable_payment_verification_always_present(self):
         result = _build_exec_start()
@@ -97,18 +110,18 @@ class TestGetLatestReleaseUrl:
             _get_latest_release_url()
 
 
-class TestSaorsaGenesisNode:
+class TestSaorsaGenesisNodeProvisioner:
     def test_init_defaults(self):
-        node = SaorsaGenesisNode(ip="10.0.0.1")
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1")
         assert node.ip == "10.0.0.1"
         assert node.ssh_key_path == "~/.ssh/id_rsa"
         assert node.port is None
-        assert node.ip_version is None
+        assert node.ip_version == "ipv4"
         assert node.log_level is None
         assert node.testnet is False
 
     def test_init_all_params(self):
-        node = SaorsaGenesisNode(
+        node = SaorsaGenesisNodeProvisioner(
             ip="10.0.0.1",
             ssh_key_path="/tmp/key",
             port=10000,
@@ -142,8 +155,8 @@ class TestSaorsaGenesisNode:
     ):
         mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
 
-        node = SaorsaGenesisNode(ip="10.0.0.1", port=10000, ip_version="ipv4")
-        node.provision()
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1", port=10000, ip_version="ipv4")
+        node.execute()
 
         mock_connect.assert_called_once()
         assert mock_add_op.call_count == 4
@@ -170,9 +183,9 @@ class TestSaorsaGenesisNode:
         mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
         mock_run_ops.side_effect = RuntimeError("connection failed")
 
-        node = SaorsaGenesisNode(ip="10.0.0.1")
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1")
         with pytest.raises(RuntimeError, match="connection failed"):
-            node.provision()
+            node.execute()
 
         mock_disconnect.assert_called_once()
 
@@ -195,8 +208,8 @@ class TestSaorsaGenesisNode:
     ):
         mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
 
-        node = SaorsaGenesisNode(ip="192.168.1.100", ssh_key_path="/tmp/mykey")
-        node.provision()
+        node = SaorsaGenesisNodeProvisioner(ip="192.168.1.100", ssh_key_path="/tmp/mykey")
+        node.execute()
 
         inventory_call = mock_inventory.call_args
         hosts = inventory_call[0][0][0]
@@ -224,8 +237,8 @@ class TestSaorsaGenesisNode:
     ):
         mock_release_url.return_value = "https://github.com/download/v1.0.0/asset.tar.gz"
 
-        node = SaorsaGenesisNode(ip="10.0.0.1")
-        node.provision()
+        node = SaorsaGenesisNodeProvisioner(ip="10.0.0.1")
+        node.execute()
 
         # The 4th add_op call should be for enabling/starting the service
         service_call = mock_add_op.call_args_list[3]

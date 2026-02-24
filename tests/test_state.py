@@ -9,6 +9,7 @@ from saorsa_deploy.state import (
     delete_deployment_state,
     load_deployment_state,
     save_deployment_state,
+    update_deployment_state,
 )
 
 
@@ -25,8 +26,9 @@ class TestSaveDeploymentState:
         save_deployment_state(
             name="DEV-01",
             regions=[("digitalocean", "lon1"), ("digitalocean", "nyc1")],
-            terraform_variables={"name": "DEV-01", "vm_count": "2", "node_count": "5"},
+            terraform_variables={"name": "DEV-01", "vm_count": "2"},
             bootstrap_ip="143.198.100.50",
+            vm_ips={"digitalocean/lon1": ["10.0.0.1"], "digitalocean/nyc1": ["10.0.0.2"]},
         )
 
         mock_s3.put_object.assert_called_once()
@@ -47,6 +49,7 @@ class TestSaveDeploymentState:
             regions=[("digitalocean", "ams3")],
             terraform_variables={},
             bootstrap_ip="10.0.0.1",
+            vm_ips={"digitalocean/ams3": ["10.0.0.2"]},
         )
 
         body = json.loads(mock_s3.put_object.call_args.kwargs["Body"])
@@ -58,10 +61,27 @@ class TestSaveDeploymentState:
             regions=[("digitalocean", "lon1")],
             terraform_variables={"name": "DEV-01"},
             bootstrap_ip="143.198.100.50",
+            vm_ips={"digitalocean/lon1": ["10.0.0.1"]},
         )
 
         body = json.loads(mock_s3.put_object.call_args.kwargs["Body"])
         assert body["bootstrap_ip"] == "143.198.100.50"
+
+    def test_stores_vm_ips(self, mock_s3):
+        vm_ips = {
+            "digitalocean/lon1": ["10.0.0.1", "10.0.0.2"],
+            "digitalocean/ams3": ["10.0.0.3"],
+        }
+        save_deployment_state(
+            name="DEV-01",
+            regions=[("digitalocean", "lon1"), ("digitalocean", "ams3")],
+            terraform_variables={"name": "DEV-01"},
+            bootstrap_ip="143.198.100.50",
+            vm_ips=vm_ips,
+        )
+
+        body = json.loads(mock_s3.put_object.call_args.kwargs["Body"])
+        assert body["vm_ips"] == vm_ips
 
 
 class TestLoadDeploymentState:
@@ -91,6 +111,40 @@ class TestLoadDeploymentState:
 
         with pytest.raises(RuntimeError, match="No deployment state found"):
             load_deployment_state("NONEXISTENT")
+
+
+class TestUpdateDeploymentState:
+    def test_merges_updates_into_existing_state(self, mock_s3):
+        existing_state = {
+            "name": "DEV-01",
+            "regions": [["digitalocean", "lon1"]],
+            "bootstrap_ip": "10.0.0.1",
+        }
+        mock_body = MagicMock()
+        mock_body.read.return_value = json.dumps(existing_state).encode()
+        mock_s3.get_object.return_value = {"Body": mock_body}
+
+        update_deployment_state("DEV-01", {"bootstrap_port": 5000})
+
+        mock_s3.put_object.assert_called_once()
+        body = json.loads(mock_s3.put_object.call_args.kwargs["Body"])
+        assert body["name"] == "DEV-01"
+        assert body["bootstrap_ip"] == "10.0.0.1"
+        assert body["bootstrap_port"] == 5000
+
+    def test_overwrites_existing_keys(self, mock_s3):
+        existing_state = {
+            "name": "DEV-01",
+            "node_count": 3,
+        }
+        mock_body = MagicMock()
+        mock_body.read.return_value = json.dumps(existing_state).encode()
+        mock_s3.get_object.return_value = {"Body": mock_body}
+
+        update_deployment_state("DEV-01", {"node_count": 5})
+
+        body = json.loads(mock_s3.put_object.call_args.kwargs["Body"])
+        assert body["node_count"] == 5
 
 
 class TestDeleteDeploymentState:

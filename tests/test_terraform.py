@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from unittest.mock import patch
@@ -9,6 +10,7 @@ from saorsa_deploy.terraform import (
     build_apply_args,
     build_destroy_args,
     build_init_args,
+    build_output_args,
     prepare_workspace,
     run_terraform,
     run_terraform_destroy,
@@ -45,7 +47,6 @@ def config(tf_source, workspace):
             "name": "TEST",
             "region": "lon1",
             "vm_count": "2",
-            "node_count": "5",
             "attached_volume_size": "20",
         },
     )
@@ -96,7 +97,6 @@ class TestBuildApplyArgs:
             "-input=false",
             "-var=attached_volume_size=20",
             "-var=name=TEST",
-            "-var=node_count=5",
             "-var=region=lon1",
             "-var=vm_count=2",
         ]
@@ -110,6 +110,12 @@ class TestBuildApplyArgs:
             "-auto-approve",
             "-input=false",
         ]
+
+
+class TestBuildOutputArgs:
+    def test_returns_correct_args(self):
+        args = build_output_args()
+        assert args == ["terraform", "output", "-json"]
 
 
 class TestRunTerraform:
@@ -142,7 +148,6 @@ class TestRunTerraform:
             "-input=false",
             "-var=attached_volume_size=20",
             "-var=name=TEST",
-            "-var=node_count=5",
             "-var=region=lon1",
             "-var=vm_count=2",
         ]
@@ -179,7 +184,7 @@ class TestRunTerraform:
         result = run_terraform(config)
         assert result.success is False
         assert result.stderr == "init error"
-        assert mock_run.call_count == 1  # apply was not called
+        assert mock_run.call_count == 1
 
     @patch("saorsa_deploy.terraform.subprocess.run")
     def test_apply_failure_returns_failure(self, mock_run, config):
@@ -190,12 +195,54 @@ class TestRunTerraform:
         result = run_terraform(config)
         assert result.success is False
         assert result.stderr == "apply error"
+        assert mock_run.call_count == 2
 
     @patch("saorsa_deploy.terraform.subprocess.run")
     def test_workspace_files_exist_after_run(self, mock_run, config):
         mock_run.return_value = _make_completed_process()
         run_terraform(config)
         assert (config.workspace_dir / "main.tf").exists()
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_captures_terraform_outputs(self, mock_run, config):
+        output_json = json.dumps(
+            {
+                "droplet_ips": {"value": ["10.0.0.1", "10.0.0.2"]},
+                "droplet_ids": {"value": [123, 456]},
+                "volume_ids": {"value": ["vol-1", "vol-2"]},
+            }
+        )
+        mock_run.side_effect = [
+            _make_completed_process(),  # init
+            _make_completed_process(),  # apply
+            _make_completed_process(stdout=output_json),  # output
+        ]
+        result = run_terraform(config)
+        assert result.success is True
+        assert result.outputs["droplet_ips"] == ["10.0.0.1", "10.0.0.2"]
+        assert result.outputs["droplet_ids"] == [123, 456]
+        assert mock_run.call_count == 3
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_output_failure_still_succeeds(self, mock_run, config):
+        mock_run.side_effect = [
+            _make_completed_process(),  # init
+            _make_completed_process(),  # apply
+            _make_completed_process(returncode=1),  # output fails
+        ]
+        result = run_terraform(config)
+        assert result.success is True
+        assert result.outputs == {}
+
+    @patch("saorsa_deploy.terraform.subprocess.run")
+    def test_calls_init_apply_output_in_order(self, mock_run, config):
+        mock_run.return_value = _make_completed_process()
+        run_terraform(config)
+
+        assert mock_run.call_count == 3
+        assert mock_run.call_args_list[0].args[0][1] == "init"
+        assert mock_run.call_args_list[1].args[0][1] == "apply"
+        assert mock_run.call_args_list[2].args[0][1] == "output"
 
 
 class TestBuildDestroyArgs:
@@ -208,7 +255,6 @@ class TestBuildDestroyArgs:
             "-input=false",
             "-var=attached_volume_size=20",
             "-var=name=TEST",
-            "-var=node_count=5",
             "-var=region=lon1",
             "-var=vm_count=2",
         ]
@@ -249,7 +295,6 @@ class TestRunTerraformDestroy:
             "-input=false",
             "-var=attached_volume_size=20",
             "-var=name=TEST",
-            "-var=node_count=5",
             "-var=region=lon1",
             "-var=vm_count=2",
         ]

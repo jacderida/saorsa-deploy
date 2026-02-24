@@ -29,7 +29,7 @@ def _get_latest_release_url() -> str:
     )
 
 
-def _build_exec_start(port=None, ip_version=None, log_level=None, testnet=False) -> str:
+def _build_exec_start(port=None, ip_version="ipv4", log_level=None, testnet=False) -> str:
     """Build the ExecStart command line for the systemd service."""
     parts = [BINARY_INSTALL_PATH]
     if port:
@@ -40,7 +40,7 @@ def _build_exec_start(port=None, ip_version=None, log_level=None, testnet=False)
         parts.append(f"--log-level {log_level}")
     parts.append("--disable-payment-verification")
     if testnet:
-        parts.append("--testnet")
+        parts.append("--network-mode testnet")
     return " ".join(parts)
 
 
@@ -63,7 +63,7 @@ WantedBy=multi-user.target
 """
 
 
-class SaorsaGenesisNode:
+class SaorsaGenesisNodeProvisioner:
     """Provisions the genesis node on a remote host using Pyinfra."""
 
     def __init__(
@@ -71,7 +71,7 @@ class SaorsaGenesisNode:
         ip: str,
         ssh_key_path: str = "~/.ssh/id_rsa",
         port: int | None = None,
-        ip_version: str | None = None,
+        ip_version: str = "ipv4",
         log_level: str | None = None,
         testnet: bool = False,
         console: Console | None = None,
@@ -84,7 +84,7 @@ class SaorsaGenesisNode:
         self.testnet = testnet
         self.console = console or Console()
 
-    def provision(self) -> None:
+    def execute(self) -> None:
         """Download the saorsa-node binary, install it, and start the genesis service."""
         self.console.print("Fetching latest release from GitHub...")
         download_url = _get_latest_release_url()

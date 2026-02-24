@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ class TerraformResult:
     region: str
     stdout: str = ""
     stderr: str = ""
+    outputs: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -54,8 +56,13 @@ def build_apply_args(config: TerraformRunConfig) -> list[str]:
     return args
 
 
+def build_output_args() -> list[str]:
+    """Build the argument list for terraform output."""
+    return ["terraform", "output", "-json"]
+
+
 def run_terraform(config: TerraformRunConfig) -> TerraformResult:
-    """Run terraform init + apply for a single provider/region."""
+    """Run terraform init + apply + output for a single provider/region."""
     prepare_workspace(config)
 
     env = os.environ.copy()
@@ -87,12 +94,35 @@ def run_terraform(config: TerraformRunConfig) -> TerraformResult:
         capture_output=True,
         text=True,
     )
+    if apply_result.returncode != 0:
+        return TerraformResult(
+            success=False,
+            provider=config.provider,
+            region=config.region,
+            stdout=apply_result.stdout,
+            stderr=apply_result.stderr,
+        )
+
+    outputs = {}
+    output_args = build_output_args()
+    output_result = subprocess.run(
+        output_args,
+        cwd=str(config.workspace_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if output_result.returncode == 0 and output_result.stdout.strip():
+        raw = json.loads(output_result.stdout)
+        outputs = {k: v.get("value") for k, v in raw.items()}
+
     return TerraformResult(
-        success=apply_result.returncode == 0,
+        success=True,
         provider=config.provider,
         region=config.region,
         stdout=apply_result.stdout,
         stderr=apply_result.stderr,
+        outputs=outputs,
     )
 
 

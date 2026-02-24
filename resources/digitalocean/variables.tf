@@ -15,10 +15,6 @@ variable "vm_count" {
   type = number
 }
 
-variable "node_count" {
-  type = number
-}
-
 variable "attached_volume_size" {
   type    = number
   default = 20
