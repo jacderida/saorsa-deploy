@@ -3,6 +3,7 @@ import sys
 from rich.console import Console
 
 from saorsa_deploy.provisioning.node import SaorsaNodeProvisioner
+from saorsa_deploy.ssh import clear_known_hosts
 from saorsa_deploy.state import load_deployment_state, update_deployment_state
 
 
@@ -68,6 +69,8 @@ def cmd_provision(args):
     if args.testnet:
         console.print("  Testnet mode: enabled")
     console.print()
+
+    clear_known_hosts(all_ips, console)
 
     kwargs = {
         "host_ips": all_ips,

@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pyinfra.operations import server
 
+from saorsa_deploy.cmd.provision import cmd_provision
 from saorsa_deploy.provisioning.node import (
     SaorsaNodeProvisioner,
     _build_node_exec_start,
@@ -389,3 +391,113 @@ class TestSaorsaNodeProvisioner:
         assert commands[0] == "systemctl daemon-reload"
         assert "systemctl is-active --quiet saorsa-node-1" in commands[1]
         assert "systemctl is-active --quiet saorsa-node-2" in commands[2]
+
+
+class TestCmdProvisionClearsKnownHosts:
+    @patch("saorsa_deploy.cmd.provision.update_deployment_state")
+    @patch("saorsa_deploy.cmd.provision.SaorsaNodeProvisioner")
+    @patch("saorsa_deploy.cmd.provision.clear_known_hosts")
+    @patch("saorsa_deploy.cmd.provision.load_deployment_state")
+    def test_clears_known_hosts_for_all_vm_ips(
+        self,
+        mock_load_state,
+        mock_clear_known_hosts,
+        mock_provisioner_cls,
+        _mock_update_state,
+    ):
+        mock_load_state.return_value = {
+            "bootstrap_ip": "10.0.0.100",
+            "bootstrap_port": 5000,
+            "vm_ips": {
+                "lon1": ["10.0.0.1", "10.0.0.2"],
+                "nyc1": ["10.0.0.3"],
+            },
+        }
+        mock_provisioner_cls.return_value.execute.return_value = None
+
+        args = SimpleNamespace(
+            name="test-deploy",
+            ssh_key_path="~/.ssh/id_rsa",
+            node_count=1,
+            port=None,
+            ip_version=None,
+            log_level=None,
+            testnet=False,
+            region=None,
+        )
+        cmd_provision(args)
+
+        mock_clear_known_hosts.assert_called_once()
+        called_ips = mock_clear_known_hosts.call_args[0][0]
+        assert sorted(called_ips) == ["10.0.0.1", "10.0.0.2", "10.0.0.3"]
+
+    @patch("saorsa_deploy.cmd.provision.update_deployment_state")
+    @patch("saorsa_deploy.cmd.provision.SaorsaNodeProvisioner")
+    @patch("saorsa_deploy.cmd.provision.clear_known_hosts")
+    @patch("saorsa_deploy.cmd.provision.load_deployment_state")
+    def test_clears_known_hosts_for_single_region(
+        self,
+        mock_load_state,
+        mock_clear_known_hosts,
+        mock_provisioner_cls,
+        _mock_update_state,
+    ):
+        mock_load_state.return_value = {
+            "bootstrap_ip": "10.0.0.100",
+            "bootstrap_port": 5000,
+            "vm_ips": {
+                "lon1": ["10.0.0.1", "10.0.0.2"],
+                "nyc1": ["10.0.0.3"],
+            },
+        }
+        mock_provisioner_cls.return_value.execute.return_value = None
+
+        args = SimpleNamespace(
+            name="test-deploy",
+            ssh_key_path="~/.ssh/id_rsa",
+            node_count=1,
+            port=None,
+            ip_version=None,
+            log_level=None,
+            testnet=False,
+            region="lon1",
+        )
+        cmd_provision(args)
+
+        mock_clear_known_hosts.assert_called_once()
+        called_ips = mock_clear_known_hosts.call_args[0][0]
+        assert called_ips == ["10.0.0.1", "10.0.0.2"]
+
+    @patch("saorsa_deploy.cmd.provision.update_deployment_state")
+    @patch("saorsa_deploy.cmd.provision.SaorsaNodeProvisioner")
+    @patch("saorsa_deploy.cmd.provision.clear_known_hosts")
+    @patch("saorsa_deploy.cmd.provision.load_deployment_state")
+    def test_clears_known_hosts_before_provisioner_executes(
+        self,
+        mock_load_state,
+        mock_clear_known_hosts,
+        mock_provisioner_cls,
+        _mock_update_state,
+    ):
+        mock_load_state.return_value = {
+            "bootstrap_ip": "10.0.0.100",
+            "bootstrap_port": 5000,
+            "vm_ips": {"lon1": ["10.0.0.1"]},
+        }
+        call_order = []
+        mock_clear_known_hosts.side_effect = lambda *a, **kw: call_order.append("clear_known_hosts")
+        mock_provisioner_cls.return_value.execute.side_effect = lambda: call_order.append("execute")
+
+        args = SimpleNamespace(
+            name="test-deploy",
+            ssh_key_path="~/.ssh/id_rsa",
+            node_count=1,
+            port=None,
+            ip_version=None,
+            log_level=None,
+            testnet=False,
+            region=None,
+        )
+        cmd_provision(args)
+
+        assert call_order == ["clear_known_hosts", "execute"]

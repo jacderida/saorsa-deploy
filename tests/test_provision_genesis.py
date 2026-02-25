@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pyinfra.operations import files, server, systemd
 
+from saorsa_deploy.cmd.provision_genesis import cmd_provision_genesis
 from saorsa_deploy.provisioning.genesis import (
     BINARY_INSTALL_PATH,
     SERVICE_NAME,
@@ -302,3 +304,61 @@ class TestSaorsaGenesisNodeProvisioner:
         commands = download_call.kwargs.get("commands", [])
         assert len(commands) == 1
         assert commands[0].startswith("test -f /usr/local/bin/saorsa-node")
+
+
+class TestCmdProvisionGenesisClearsKnownHosts:
+    @patch("saorsa_deploy.cmd.provision_genesis.update_deployment_state")
+    @patch("saorsa_deploy.cmd.provision_genesis.SaorsaGenesisNodeProvisioner")
+    @patch("saorsa_deploy.cmd.provision_genesis.clear_known_hosts")
+    @patch("saorsa_deploy.cmd.provision_genesis.load_deployment_state")
+    def test_clears_known_hosts_for_bootstrap_ip(
+        self,
+        mock_load_state,
+        mock_clear_known_hosts,
+        mock_provisioner_cls,
+        mock_update_state,
+    ):
+        mock_load_state.return_value = {"bootstrap_ip": "10.0.0.1"}
+        mock_provisioner_cls.return_value.execute.return_value = None
+
+        args = SimpleNamespace(
+            name="test-deploy",
+            ssh_key_path="~/.ssh/id_rsa",
+            port=None,
+            ip_version=None,
+            log_level=None,
+            testnet=False,
+        )
+        cmd_provision_genesis(args)
+
+        mock_clear_known_hosts.assert_called_once()
+        called_ips = mock_clear_known_hosts.call_args[0][0]
+        assert called_ips == ["10.0.0.1"]
+
+    @patch("saorsa_deploy.cmd.provision_genesis.update_deployment_state")
+    @patch("saorsa_deploy.cmd.provision_genesis.SaorsaGenesisNodeProvisioner")
+    @patch("saorsa_deploy.cmd.provision_genesis.clear_known_hosts")
+    @patch("saorsa_deploy.cmd.provision_genesis.load_deployment_state")
+    def test_clears_known_hosts_before_provisioner_executes(
+        self,
+        mock_load_state,
+        mock_clear_known_hosts,
+        mock_provisioner_cls,
+        mock_update_state,
+    ):
+        mock_load_state.return_value = {"bootstrap_ip": "10.0.0.1"}
+        call_order = []
+        mock_clear_known_hosts.side_effect = lambda *a, **kw: call_order.append("clear_known_hosts")
+        mock_provisioner_cls.return_value.execute.side_effect = lambda: call_order.append("execute")
+
+        args = SimpleNamespace(
+            name="test-deploy",
+            ssh_key_path="~/.ssh/id_rsa",
+            port=None,
+            ip_version=None,
+            log_level=None,
+            testnet=False,
+        )
+        cmd_provision_genesis(args)
+
+        assert call_order == ["clear_known_hosts", "execute"]
