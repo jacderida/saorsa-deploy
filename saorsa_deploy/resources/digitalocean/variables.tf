@@ -30,6 +30,7 @@ variable "ssh_key_ids" {
     30878672, # Chris O'Neil
     31216015, # QA
     34183228, # GH Actions Automation
-    38596814  # sn-testnet-workflows automation
+    38596814, # sn-testnet-workflows automation
+    54385801  # saorsa-deploy
   ]
 }
