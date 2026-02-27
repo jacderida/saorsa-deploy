@@ -87,8 +87,12 @@ def main() -> None:
     update_version(new_version)
     print(f"Updated pyproject.toml: {current_version} -> {new_version}")
 
+    # Regenerate uv.lock with new version
+    run(["uv", "lock"])
+    print("Updated uv.lock")
+
     # Create commit
-    run(["git", "add", "pyproject.toml"])
+    run(["git", "add", "pyproject.toml", "uv.lock"])
     run(["git", "commit", "-m", f"chore(release): {tag}"])
     print(f"Created commit: chore(release): {tag}")
 
