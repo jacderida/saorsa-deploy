@@ -1,11 +1,17 @@
 import argparse
 import sys
+from importlib.metadata import version
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="saorsa-deploy",
         description="Deploy testnets for saorsa-node using Terraform and Pyinfra",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('saorsa-deploy')}",
     )
     subparsers = parser.add_subparsers(dest="command")
 

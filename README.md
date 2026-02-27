@@ -107,6 +107,27 @@ Currently only Digital Ocean is supported. The architecture is designed for mult
 
 **Digital Ocean regions**: lon1, nyc1, ams3, sfo3, sgp1, blr1, fra1, tor1
 
+## Releasing
+
+Releases use semantic versioning with git tags. A release script handles the version bump, commit, tag, and push:
+
+```bash
+uv run scripts/release.py 0.2.0
+```
+
+This will:
+1. Update the version in `pyproject.toml`
+2. Create a `chore(release): v0.2.0` commit
+3. Tag the commit as `v0.2.0`
+4. Push the commit and tag to the maidsafe remote (`origin` or `upstream`, auto-detected)
+
+The script auto-detects which remote points to `maidsafe/saorsa-deploy`, so it works whether you're running from a fork (where `upstream` = maidsafe) or a direct clone (where `origin` = maidsafe).
+
+To check the current version:
+```bash
+uv run saorsa-deploy --version
+```
+
 ## Development
 
 ### Running tests
