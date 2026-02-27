@@ -74,6 +74,17 @@ uv run ruff check saorsa_deploy/ tests/
 - Ruff config: line-length 100, rules E/F/I.
 - Always run both format and check before committing.
 
+## Releasing
+
+Releases use semantic versioning with git tags. The version source of truth is `pyproject.toml`.
+
+```bash
+uv run scripts/release.py <VERSION>    # e.g., uv run scripts/release.py 0.2.0
+uv run saorsa-deploy --version          # Print current version
+```
+
+The release script updates `pyproject.toml`, creates a `chore(release): vX.Y.Z` commit, tags it, and pushes to the maidsafe remote (auto-detects `origin` vs `upstream`).
+
 ## Key Design Decisions
 
 - **Provider-per-directory Terraform structure**: Each cloud provider gets its own directory under `saorsa_deploy/resources/`. TF files are copied to isolated workspace directories at runtime so parallel `terraform apply` calls don't conflict.
