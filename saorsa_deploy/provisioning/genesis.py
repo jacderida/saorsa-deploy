@@ -1,6 +1,5 @@
 from io import StringIO
 
-import requests
 from pyinfra.api import Config, Inventory, State
 from pyinfra.api.connect import connect_all, disconnect_all
 from pyinfra.api.operation import add_op
@@ -8,25 +7,11 @@ from pyinfra.api.operations import run_ops
 from pyinfra.operations import files, server, systemd
 from rich.console import Console
 
-GITHUB_REPO = "saorsa-labs/saorsa-node"
-RELEASE_ASSET_NAME = "saorsa-node-cli-linux-x64.tar.gz"
+from saorsa_deploy.binary_source import RELEASE_ASSET_NAME, get_release_url
+
 BINARY_INSTALL_PATH = "/usr/local/bin/saorsa-node"
 SERVICE_NAME = "saorsa-genesis-node"
 UNIT_FILE_PATH = f"/etc/systemd/system/{SERVICE_NAME}.service"
-
-
-def _get_latest_release_url() -> str:
-    """Fetch the download URL for the latest saorsa-node release from GitHub."""
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    release = resp.json()
-    for asset in release.get("assets", []):
-        if asset["name"] == RELEASE_ASSET_NAME:
-            return asset["browser_download_url"]
-    raise RuntimeError(
-        f"Could not find asset '{RELEASE_ASSET_NAME}' in latest release of {GITHUB_REPO}"
-    )
 
 
 def _build_exec_start(port=None, ip_version="ipv4", log_level=None, testnet=False) -> str:
@@ -75,6 +60,8 @@ class SaorsaGenesisNodeProvisioner:
         log_level: str | None = None,
         testnet: bool = False,
         console: Console | None = None,
+        binary_url: str | None = None,
+        binary_is_archive: bool = True,
     ):
         self.ip = ip
         self.ssh_key_path = ssh_key_path
@@ -83,12 +70,18 @@ class SaorsaGenesisNodeProvisioner:
         self.log_level = log_level
         self.testnet = testnet
         self.console = console or Console()
+        self.binary_url = binary_url
+        self.binary_is_archive = binary_is_archive
 
     def execute(self) -> None:
         """Download the saorsa-node binary, install it, and start the genesis service."""
-        self.console.print("Fetching latest release from GitHub...")
-        download_url = _get_latest_release_url()
-        self.console.print(f"  Release URL: {download_url}")
+        if self.binary_url:
+            download_url = self.binary_url
+            self.console.print(f"Using binary URL: {download_url}")
+        else:
+            self.console.print("Fetching latest release from GitHub...")
+            download_url = get_release_url()
+            self.console.print(f"  Release URL: {download_url}")
 
         exec_start = _build_exec_start(
             port=self.port,
@@ -114,16 +107,25 @@ class SaorsaGenesisNodeProvisioner:
         connect_all(state)
 
         try:
-            install_cmd = (
-                f"test -f {BINARY_INSTALL_PATH} "
-                f"&& echo 'SAORSA_BINARY:SKIP' || "
-                f"(wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME} && "
-                f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/ && "
-                f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH} && "
-                f"chmod +x {BINARY_INSTALL_PATH} && "
-                f"rm -f /tmp/{RELEASE_ASSET_NAME} && "
-                f"echo 'SAORSA_BINARY:INSTALLED')"
-            )
+            if self.binary_is_archive:
+                install_cmd = (
+                    f"test -f {BINARY_INSTALL_PATH} "
+                    f"&& echo 'SAORSA_BINARY:SKIP' || "
+                    f"(wget -q {download_url} -O /tmp/{RELEASE_ASSET_NAME} && "
+                    f"tar -xzf /tmp/{RELEASE_ASSET_NAME} -C /tmp/ && "
+                    f"mv /tmp/saorsa-node {BINARY_INSTALL_PATH} && "
+                    f"chmod +x {BINARY_INSTALL_PATH} && "
+                    f"rm -f /tmp/{RELEASE_ASSET_NAME} && "
+                    f"echo 'SAORSA_BINARY:INSTALLED')"
+                )
+            else:
+                install_cmd = (
+                    f"test -f {BINARY_INSTALL_PATH} "
+                    f"&& echo 'SAORSA_BINARY:SKIP' || "
+                    f"(wget -q {download_url} -O {BINARY_INSTALL_PATH} && "
+                    f"chmod +x {BINARY_INSTALL_PATH} && "
+                    f"echo 'SAORSA_BINARY:INSTALLED')"
+                )
             install_results = add_op(
                 state,
                 server.shell,

@@ -123,7 +123,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_calls_pyinfra_operations(
         self,
         mock_release_url,
@@ -159,7 +159,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_disconnects_on_error(
         self,
         mock_release_url,
@@ -189,7 +189,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_creates_inventory_with_all_hosts(
         self,
         mock_release_url,
@@ -228,7 +228,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_creates_correct_service_count(
         self,
         mock_release_url,
@@ -261,7 +261,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_raises_when_hosts_fail(
         self,
         mock_release_url,
@@ -293,7 +293,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_all_ops_are_server_shell(
         self,
         mock_release_url,
@@ -326,7 +326,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_binary_install_has_existence_guard(
         self,
         mock_release_url,
@@ -360,7 +360,7 @@ class TestSaorsaNodeProvisioner:
     @patch("saorsa_deploy.provisioning.node.connect_all")
     @patch("saorsa_deploy.provisioning.node.State")
     @patch("saorsa_deploy.provisioning.node.Inventory")
-    @patch("saorsa_deploy.provisioning.node._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.node.get_release_url")
     def test_execute_service_enable_has_is_active_guard(
         self,
         mock_release_url,

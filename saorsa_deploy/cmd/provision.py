@@ -2,6 +2,7 @@ import sys
 
 from rich.console import Console
 
+from saorsa_deploy.cmd.provision_genesis import _resolve_binary_source
 from saorsa_deploy.provisioning.node import SaorsaNodeProvisioner
 from saorsa_deploy.ssh import clear_known_hosts
 from saorsa_deploy.state import load_deployment_state, update_deployment_state
@@ -38,6 +39,8 @@ def cmd_provision(args):
             "Has the provision-genesis command been run?"
         )
         sys.exit(1)
+
+    binary_url, binary_is_archive = _resolve_binary_source(args, console)
 
     if args.region:
         if args.region not in vm_ips:
@@ -85,6 +88,9 @@ def cmd_provision(args):
     }
     if args.ip_version:
         kwargs["ip_version"] = args.ip_version
+    if binary_url:
+        kwargs["binary_url"] = binary_url
+        kwargs["binary_is_archive"] = binary_is_archive
     provisioner = SaorsaNodeProvisioner(**kwargs)
 
     try:

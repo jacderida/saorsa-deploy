@@ -22,8 +22,12 @@ uv sync
 | `DO_TOKEN` | Digital Ocean API token (required) |
 | `AWS_ACCESS_KEY_ID` | AWS credentials for Terraform state backend and deployment state |
 | `AWS_SECRET_ACCESS_KEY` | AWS credentials for Terraform state backend and deployment state |
+| `SAORSA_BUILD_AWS_ACCESS_KEY_ID` | AWS credentials for uploading custom-built binaries (only for `build-saorsa-node-binary`) |
+| `SAORSA_BUILD_AWS_SECRET_ACCESS_KEY` | AWS credentials for uploading custom-built binaries (only for `build-saorsa-node-binary`) |
 
 Terraform state and deployment metadata are stored in the `maidsafe-org-infra-tfstate` S3 bucket (region `eu-west-2`). AWS credentials are resolved via the standard boto3 credential chain (environment variables, `~/.aws/credentials`, or IAM roles).
+
+The `SAORSA_BUILD_AWS_*` credentials are for the `saorsa-build-uploader` IAM user, which has `s3:PutObject` on the `saorsa-node-builds` bucket. Create the access key manually after applying the Terraform in `saorsa_deploy/resources/aws-build-infra/`.
 
 ## Usage
 
@@ -56,6 +60,102 @@ uv run saorsa-deploy infra --name DEV-01 --node-count 10 --vm-count 3 --testnet
 Deploy across 2 regions with larger volumes:
 ```bash
 uv run saorsa-deploy infra --name PERF-05 --node-count 10 --vm-count 5 --region-counts 2 --attached-volume-size 50
+```
+
+### `provision-genesis` command
+
+Provision the genesis node on the bootstrap VM.
+
+```bash
+uv run saorsa-deploy provision-genesis --name DEV-01 --port 12000
+```
+
+#### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--branch-name` | string | No | - | Use custom-built binary from this branch (requires `--repo-owner`) |
+| `--ip-version` | string | No | - | IP version: `v4` or `v6` |
+| `--log-level` | string | No | - | Logging level for the node |
+| `--name` | string | Yes | - | Deployment name (must match `infra`) |
+| `--node-version` | string | No | - | Specific release version (e.g., `0.2.0`) |
+| `--port` | int | Yes | - | Port for the genesis node |
+| `--repo-owner` | string | No | - | GitHub repo owner (requires `--branch-name`) |
+| `--ssh-key-path` | string | No | `~/.ssh/id_rsa` | SSH key for provisioning |
+| `--testnet` | flag | No | - | Run with `--testnet` flag |
+
+### `provision` command
+
+Provision node services on all VMs (or a specific region).
+
+```bash
+uv run saorsa-deploy provision --name DEV-01 --node-count 10
+```
+
+#### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--branch-name` | string | No | - | Use custom-built binary from this branch (requires `--repo-owner`) |
+| `--ip-version` | string | No | - | IP version: `v4` or `v6` |
+| `--log-level` | string | No | - | Logging level for the nodes |
+| `--name` | string | Yes | - | Deployment name (must match `infra`) |
+| `--node-count` | int | Yes | - | Number of node services per VM |
+| `--node-version` | string | No | - | Specific release version (e.g., `0.2.0`) |
+| `--port` | int | No | - | Beginning of port range (omit for random) |
+| `--region` | string | No | - | Provision only VMs in this region |
+| `--repo-owner` | string | No | - | GitHub repo owner (requires `--branch-name`) |
+| `--ssh-key-path` | string | No | `~/.ssh/id_rsa` | SSH key for provisioning |
+| `--testnet` | flag | No | - | Run with `--testnet` flag |
+
+#### Binary version selection
+
+By default, provisioning uses the latest GitHub release. You can override this:
+
+```bash
+# Use a specific release version
+uv run saorsa-deploy provision-genesis --name DEV-01 --port 12000 --node-version 0.2.0
+
+# Use a custom-built binary (must run build-saorsa-node-binary first)
+uv run saorsa-deploy provision --name DEV-01 --node-count 10 --branch-name feature-x --repo-owner myorg
+```
+
+`--node-version` and `--branch-name`/`--repo-owner` are mutually exclusive. `--branch-name` and `--repo-owner` must be used together.
+
+### `build-saorsa-node-binary` command
+
+Build saorsa-node from a Git branch on an ephemeral DO droplet and upload the binary to S3.
+
+```bash
+uv run saorsa-deploy build-saorsa-node-binary --branch-name feature-x --repo-owner myorg
+```
+
+#### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--branch-name` | string | Yes | - | Git branch to build from |
+| `--repo-owner` | string | Yes | - | GitHub repository owner |
+| `--ssh-key-path` | string | No | `~/.ssh/id_rsa` | SSH key for provisioning the build VM |
+
+This command:
+1. Creates a `c-16` (16 vCPU, 32GB RAM) DO droplet in lon1
+2. Installs Rust, clones the repo, builds in release mode
+3. Uploads the binary to `s3://saorsa-node-builds/builds/{owner}/{branch}/saorsa-node`
+4. Destroys the droplet (even on failure)
+
+Requires `SAORSA_BUILD_AWS_ACCESS_KEY_ID` and `SAORSA_BUILD_AWS_SECRET_ACCESS_KEY`.
+
+#### AWS Build Infrastructure Setup
+
+The S3 bucket and IAM user are managed by Terraform:
+
+```bash
+cd saorsa_deploy/resources/aws-build-infra/
+terraform init
+terraform apply
+# Then create the access key manually:
+aws iam create-access-key --user-name saorsa-build-uploader
 ```
 
 ### `destroy` command

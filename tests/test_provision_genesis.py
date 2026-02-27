@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pyinfra.operations import files, server, systemd
 
+from saorsa_deploy.binary_source import get_release_url
 from saorsa_deploy.cmd.provision_genesis import cmd_provision_genesis
 from saorsa_deploy.provisioning.genesis import (
     BINARY_INSTALL_PATH,
@@ -11,7 +12,6 @@ from saorsa_deploy.provisioning.genesis import (
     SaorsaGenesisNodeProvisioner,
     _build_exec_start,
     _build_unit_file,
-    _get_latest_release_url,
 )
 
 
@@ -72,9 +72,9 @@ class TestBuildUnitFile:
         assert "WantedBy=multi-user.target" in unit
 
 
-class TestGetLatestReleaseUrl:
-    @patch("saorsa_deploy.provisioning.genesis.requests.get")
-    def test_returns_download_url(self, mock_get):
+class TestGetReleaseUrl:
+    @patch("saorsa_deploy.binary_source.requests.get")
+    def test_returns_latest_download_url(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "assets": [
@@ -87,10 +87,35 @@ class TestGetLatestReleaseUrl:
         mock_resp.raise_for_status = MagicMock()
         mock_get.return_value = mock_resp
 
-        url = _get_latest_release_url()
+        url = get_release_url()
         assert url == "https://github.com/download/v1.0.0/asset.tar.gz"
+        mock_get.assert_called_once_with(
+            "https://api.github.com/repos/saorsa-labs/saorsa-node/releases/latest",
+            timeout=30,
+        )
 
-    @patch("saorsa_deploy.provisioning.genesis.requests.get")
+    @patch("saorsa_deploy.binary_source.requests.get")
+    def test_returns_versioned_download_url(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "assets": [
+                {
+                    "name": "saorsa-node-cli-linux-x64.tar.gz",
+                    "browser_download_url": "https://github.com/download/v0.2.0/asset.tar.gz",
+                },
+            ],
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        url = get_release_url("0.2.0")
+        assert url == "https://github.com/download/v0.2.0/asset.tar.gz"
+        mock_get.assert_called_once_with(
+            "https://api.github.com/repos/saorsa-labs/saorsa-node/releases/tags/v0.2.0",
+            timeout=30,
+        )
+
+    @patch("saorsa_deploy.binary_source.requests.get")
     def test_raises_when_asset_not_found(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -100,9 +125,9 @@ class TestGetLatestReleaseUrl:
         mock_get.return_value = mock_resp
 
         with pytest.raises(RuntimeError, match="Could not find asset"):
-            _get_latest_release_url()
+            get_release_url()
 
-    @patch("saorsa_deploy.provisioning.genesis.requests.get")
+    @patch("saorsa_deploy.binary_source.requests.get")
     def test_raises_when_no_assets(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"assets": []}
@@ -110,7 +135,7 @@ class TestGetLatestReleaseUrl:
         mock_get.return_value = mock_resp
 
         with pytest.raises(RuntimeError, match="Could not find asset"):
-            _get_latest_release_url()
+            get_release_url()
 
 
 class TestSaorsaGenesisNodeProvisioner:
@@ -145,7 +170,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_calls_pyinfra_operations(
         self,
         mock_release_url,
@@ -172,7 +197,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_disconnects_on_error(
         self,
         mock_release_url,
@@ -198,7 +223,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_creates_inventory_with_correct_host(
         self,
         mock_release_url,
@@ -227,7 +252,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_writes_systemd_unit_with_service_name(
         self,
         mock_release_url,
@@ -255,7 +280,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_uses_idempotent_operations(
         self,
         mock_release_url,
@@ -284,7 +309,7 @@ class TestSaorsaGenesisNodeProvisioner:
     @patch("saorsa_deploy.provisioning.genesis.connect_all")
     @patch("saorsa_deploy.provisioning.genesis.State")
     @patch("saorsa_deploy.provisioning.genesis.Inventory")
-    @patch("saorsa_deploy.provisioning.genesis._get_latest_release_url")
+    @patch("saorsa_deploy.provisioning.genesis.get_release_url")
     def test_provision_binary_install_has_existence_guard(
         self,
         mock_release_url,
